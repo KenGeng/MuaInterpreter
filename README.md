@@ -360,6 +360,7 @@ public void variable_missing()：处理找不到相应变量的错误
 
 public void illeagal_input()：处理输入不合法的错误
 
+```
 # 阶段2
 在第一段的基础上补充实现以下内容：
 
