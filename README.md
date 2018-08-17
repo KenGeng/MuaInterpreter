@@ -555,3 +555,237 @@ main函数入口 ；
 (a) 类（接口）的功能
 处理parse过程中的错误，一旦错误会打印错误信息，并直接退出整个程序。
 
+# 阶段3
+
+## MakeUp Programming Language
+
+在第二阶段的基础上，补充实现以下操作：
+
+## 类型判断
+
+* `isnumber <value>`：返回value是否是数字 
+* `isword <value>`：返回value是否是字
+* `islist <value>`：返回value是否是表 
+* `isbool <value>`：返回value是否是布尔量 
+* `isempty <word|list>`: 返回word或list是否是空
+
+## 数值计算
+
+* `random <number>`：返回[0,number)的一个随机数
+* `sqrt <number>`：返回number的平方根
+* `int <number>`: floor the int
+
+## 字表处理
+
+* `word <word> <word|number|bool>`：将两个word合并为一个word，第二个值可以是word、number或bool
+* `if <bool> <list1> <list2>`：如果bool为真，则执行list1，否则执行list2。list均可以为空表
+* `sentence <value1> <value2>`：将value1和value2合并成一个表，两个值的元素并列，value1的在value2的前面
+* `list <value1> <value2>`：将两个值合并为一个表，如果值为表，则不打开这个表
+* `join <list> <value>`：将value作为list的最后一个元素加入到list中（如果value是表，则整个value成为表的最后一个元素）
+* `first <word|list>`：返回word的第一个字符，或list的第一个元素
+* `last <word|list>`：返回word的最后一个字符，list的最后一个元素
+* `butfirst <word|list>`：返回除第一个元素外剩下的表，或除第一个字符外剩下的字
+* `butlast <word|list>`：返回除最后一个元素外剩下的表，或除最后一个字符外剩下的字
+
+## 其他操作
+
+* `wait <number>`：等待number个ms
+* `save <word>`：保存当前命名空间在word文件中
+* `load <word>`：从word文件中装载内容，加入当前命名空间
+* `erall`：清除当前命名空间的全部内容
+* `poall`：列出当前命名空间的全部名字
+
+## 既有名字
+
+系统提供了一些常用的量，或可以由其他操作实现但是常用的操作，作为固有的名字。这些名字是可以被删除（erase）的。
+
+* `pi`：3.14159
+* `run <list>`：运行list中的代码
+
+另外，对于函数操作，补充export操作：
+* `export`：将本地make的值输出到全局
+
+
+## 三、主要仪器设备
+系统环境：macOS Sierra 10.12.6
+开发环境：IntelliJ IDEA for Mac 2017.2.5
+
+## 四、操作方法和实验步骤
+### 4.1 类型判断部分既有名字
+这部分主要是判断value的类型，在我之前的实现中，每个MUA变量都包含了自己的类型信息，所以进行这部分的编程就比较方便，直接读取每个MUA变量的类型信息进行判断即可。
+以isword为例：
+private MuaVariable op_isword(MuaVariable operand_is0) {
+    //check type
+    if (operand_is0.type == WORD) {//是否是word
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+判断是否为空也比较容易，如果word只有一个单引号标记，说明它为空；如果list中元素个数为0，说明它为空。根据以上两点，进行判断即可。代码如下：
+private MuaVariable op_isempty(MuaVariable operand_is0, Map<String, MuaVariable> variables) {
+    //check type
+    String name = operand_is0.raw_value;
+    int type = operand_is0.type;
+    if (type != WORD && type != LIST) {//是否合法输入
+              muaError_handle.illeagal_input();
+        return FINISHED;
+    } else {
+        if (type == WORD) {
+            if (operand_is0.toString().length() == 1) return TRUE;//只有一个标识字面量的引号
+            else return FALSE;
+        } else {
+            if (operand_is0.toList().size() == 0) return TRUE;
+            else return FALSE;
+        }
+    }
+}
+
+### 4.2数值计算部分
+随机数调用Java的Random包的接口；sqrt和int调用Java的Math包的sqrt和floor接口即可，不再赘述。
+### 4.3字表处理 
+这部分可以细分为三小节，分别是if语句的实现、字表拼接、字表元素提取。
+先谈谈最重要的if语句。
+if操作有三个操作，第一个是bool型，后两个为list型，如果bool为真，则执行list1，否则执行list2。list均可以为空表。
+if的实现分为两步：
+1)	判断bool量真假，决定要执行的语句
+2)	判断要执行的语句是否为空，为空直接返回，没有操作；不为空，将list中的语句传给解释器去执行。
+有一点需要注意的就是，因为在我的设计中传入的list的值包含最外面的中括号，因此在将list中的语句传给解释器时，需要去掉两端的括号，从而使解释器正常执行。具体代码如下：
+private MuaVariable op_if(MuaVariable operand_if0, MuaVariable operand_if1, MuaVariable operand_if2, Map<String, MuaVariable> variables, Map<String, Integer> operation_map) {
+    if (operand_if0.type != BOOL) {
+        muaError_handle.illeagal_input();
+        return FINISHED;
+    }
+    String case1 = operand_if1.raw_value.substring(1, operand_if1.raw_value.length() - 1);
+    String case2 = operand_if2.raw_value.substring(1, operand_if2.raw_value.length() - 1);
+    List<MuaVariable> if_buf = new ArrayList<>();
+
+    if (operand_if0.toBoolean()) {
+        if (case1.isEmpty()) return FINISHED;
+        else {
+            if_buf.add(new MuaVariable(case1));
+            return parsing(if_buf, variables, operation_map);
+        }
+    } else {
+        if (case2.isEmpty()) return FINISHED;
+        else {
+            if_buf.add(new MuaVariable(case2));
+            return parsing(if_buf, variables, operation_map);
+        }
+    }
+}
+接着是字表拼接。
+word操作类似字符串加法，具体实现上也是将两个字符串相加，不过要注意一些细节的处理，比如第二个参量为word型的话，在我的设计中，直接对它取值的话，会有一个单引号标记，需要去掉之后再拼接。
+关于sentence和list则稍有些复杂：
+Sentence && List
+print sentence "a  "b ==> [a b]
+print sentence  [a]  [b] ==> [a b]
+print sentence  "a  [b] ==>[a b]
+print sentence  [a]  [ a [b] ] ==> [ a a [b] ]
+print list "a  "b ==> [ a b ]
+print list  [a]  [b] ==> [ [a ] [b] ]
+print list  "a  [b] ==> [a [b ] ]
+print list  [a]  [ a [b] ] ==>[ [a] [a [b] ] ]
+参考以上老师给的例子，以及说明，可见sentence和list虽然都会获得一个新表，但当用于拼接的元素包含表时，sentence会将其展开，而list不会，直观地理解就是sentence会去掉作为拼接的元素的表的括号，而list不会。在我的实现中，每个表的值在存储时，是包括两边的括号的，因此要做list操作就很简单，直接拼接两个元素的原始值即可。而在做sentence操作时，如果有一个元素是表，那么需要遍历这个表才能获得它的各个元素，再作为元素拼入新表。以下为list和sentence的代码：
+private MuaVariable op_list(MuaVariable operand_l0, MuaVariable operand_l1) {
+    String l0 = "", l1 = "";
+    if (operand_l0.type == WORD) {
+        l0 = operand_l0.toWord();
+    } else if (operand_l0.type == LIST) {
+        l0 = operand_l0.raw_value;
+    } else l0 = operand_l0.raw_value;
+    if (operand_l1.type == WORD) {
+        l1 = operand_l1.toWord();
+    } else if (operand_l1.type == LIST) {
+        l1 = operand_l1.raw_value;
+
+    } else l1 = operand_l1.raw_value;
+    String res = "[ " + l0 + " " + l1 + " ]";
+    return new MuaVariable(res);
+}
+private MuaVariable op_sentence(MuaVariable operand_s0, MuaVariable operand_s1) {
+    String s0 = "", s1 = "";
+    if (operand_s0.type == WORD) {
+        s0 = operand_s0.toWord();
+    } else if (operand_s0.type == LIST) {
+        List<MuaVariable> s0_list = operand_s0.toList();
+        for (int i = 0; i < s0_list.size() + 0; i++) {
+            s0 += s0_list.get(i) + " ";
+        }
+    } else s0 = operand_s0.raw_value;
+      if (operand_s1.type == WORD) {
+        s1 = operand_s1.toWord();
+    } else if (operand_s1.type == LIST) {
+        List<MuaVariable> s1_list = operand_s1.toList();
+        for (int i = 0; i < s1_list.size(); i++) {
+            s1 += s1_list.get(i) + " ";
+        }
+
+
+    } else s1 = operand_s1.raw_value;
+    String res = "[ " + s0 + " " + s1 + " ]";
+    return new MuaVariable(res);
+
+}
+在我的实现中，join操作和sentence的元素中含有表时没有本质区别，都会将表展开，然后拼接元素，获得新表。代码如下
+private MuaVariable op_join(MuaVariable operand_j0, MuaVariable operand_j1) {
+    if (operand_j0.type != LIST) {
+
+        muaError_handle.illeagal_input("join");
+        return FINISHED;
+    }
+    String list_str = "";
+    //System.out.println("debug join:" + operand_j0.type + " " + operand_j0.raw_value);
+
+    List<MuaVariable> j0_list = operand_j0.toList();
+    for (int i = 0; i < j0_list.size(); i++) {
+        list_str += j0_list.get(i) + " ";
+    }
+    if (operand_j1.type == WORD) list_str += operand_j1.toWord();
+    else list_str += operand_j1.raw_value;
+
+    String res = "[ " + list_str + " ]";
+    return new MuaVariable(res);
+}
+最后就是字表元素的提取。这四个提取元素的操作没有太大区别，以first为例进行说明：
+如果参数是word，那么直接用charAt()获得第一个字符即可；如果是表，那么将表打开获得第一个元素即可，不过为了统一，有些格式上的细节要处理。代码如下：
+private MuaVariable op_first(MuaVariable operand_f0) {
+    if (operand_f0.type == WORD) {
+        System.out.println("debug first:" + operand_f0.raw_value + " ");
+        return new MuaVariable("\"" + operand_f0.toWord().substring(0, 1));//记得添加引号 让Word的返回值统一
+    } else {//list
+        if (operand_f0.toList().get(0).type == WORD) return new MuaVariable("\"" + operand_f0.toList().get(0));//记得添加引号 让Word的返回值统一
+        else if (operand_f0.toList().get(0).type == LIST) return new MuaVariable("[" + operand_f0.toList().get(0) + "]");//记得添加括号 让list的返回值统一
+        else return operand_f0.toList().get(0);
+    }
+}
+
+### 4.4其他操作部分
+wait操作调用Java的线程睡眠接口即可；
+save 与load操作调用Java读写文件的接口即可，需要注意的是，在我的实现中，命名空间是用hash map存储的，因此要注意一下hash map的遍历，以及我存储命名空间的格式为“变量名--变量值”中间用两个短横杠分开。示例如下：
+A--123
+v--21333
+pi--3.1415926
+run--[ [ m ]  [ output :m ]]
+erall清空hash map即可 
+poall遍历hash map打印值即可。
+这里记录一下遍历hash map的操作：
+Iterator iter = variables.entrySet().iterator();
+while (iter.hasNext()) {
+
+    Map.Entry entry = (Map.Entry) iter.next();
+    Object key = entry.getKey();
+    fileWriter.write(key + "--" + variables.get(key).raw_value + "\n");//使用-- 分割变量名和值
+}
+### 4.5 既有名字部分
+常量直接构造在初始化解释器的时候，直接添加到存储变量的hash map中即可。
+常用操作的实现要复杂一点。
+首先，在我的MUA实现中，原生的op比如make, add等是放在了一个Map<String, Integer> operation_map中，map中的key为op名，值为该op需要的参数个数。
+而自定义的函数则本质上就是有两个子表的表，也是变量的一种，所以是放在存储变量的hash map中。当然，在解释执行时，原生op与函数格式一致，都是名称+相应个数的参数。
+像run这样的常用操作在我的实现中是自定义的函数，只不过是在解释器初始化时，直接添加好的，不需要使用者再设置。因此，在实现时，只需要添加一个函数即可。之后执行函数就可以使用之前实现过的过程了。
+variables.put("run",new MuaVariable("[ [ run_v ]  [ output : run_v ]]"));//添加常用操作
+这里还有一些细节，run的操作参数是一个list，这个list其实可以在函数的命名空间中运行，也可以在主解释器中运行。在我的理解，这里的run应该在主解释器中运行，这样它和我们之前做过的直接thing一个list就没有什么区别了。不过，在MUA3.0中，为了支持高阶函数，我调整了thing操作和：操作的返回值，原来它们的返回值不包括最外面的中括号，现在为了之后处理的一致性，我重新添加了这两个中括号。因此，实现run或者thing一个list的步骤时，相比以前，我对返回值在传给解释器之前多加了一个判断：如果返回给解释器的结果是一个list，那么去掉两端的中括号，之后由解释器去解释执行。
+### 4.6 函数的export操作
+这个操作将函数本地make的值传给全局，实现中，我只需要在遇到export操作时，将函数的局部的变量hash map直接遍历添加到主解释器的hash map 即可。实现的过程与之前的stop比较相似。
+
