@@ -359,3 +359,198 @@ public void variable_missing()：处理找不到相应变量的错误
  
 
 public void illeagal_input()：处理输入不合法的错误
+
+# 阶段2
+在第一段的基础上补充实现以下内容：
+
+在第一段的基础上补充实现以下内容：
+
+## MakeUp Programming Language
+
+* `repeat <number> <list>`：运行list中的代码number次
+
+## 函数定义和调用
+
+### 定义
+
+		make <word> [<list1> <list2>]
+			word为函数名
+			list1为参数列表
+			list2为操作列表
+
+### 调用
+
+		<functionName> <arglist>
+			<functionName>为make中定义的函数名，不需要双引号"
+			<arglist>是参数列表，<arglist>中的值和函数定义时的<list1>中名字进行一一对应绑定
+
+### 函数相关的操作
+			
+* `output <value>`：设定value为返回给调用者的值，但是不停止执行
+* `stop`：停止执行
+
+### 表达式计算
+
+允许使用以下运算符对数字进行计算：
+
+	+-*/%()
+
+
+## 三、主要仪器设备
+系统环境：macOS Sierra 10.12.6
+开发环境：IntelliJ IDEA for Mac 2017.2.5
+
+## 四、操作方法和实验步骤
+概述：本部分是在MUA解释器第一段的报告上撰写的，重点描述了为了满足MUA解释器第二段的需求而进行的修改与添加，关于MUA解释器第一段的介绍可参见MUA解释器第一段的报告上，这里不再赘述。
+### 4.1 整体思路
+1. 调整读入输入的方式
+在MUA第一段中，我是直接用nextline读入一整行，再对这一行进行处理，这样是无法支持对换行输入的读取。为了支持换行输入，我改用了next方法，每次只读入一个字符串，来根据这个字符串来决定是否继续读入。为此，还需要维护一个变量count_p用来记录还需要读入多少个参数。比如如果这个字符串是make，那么它是一个需要两个参数的operator，count_p需要+2，之后，再次调用next来读入下一个参数,如果下一个参数是一个变量名比如"a，那么这是一个普通的字符串，count_p--；如果它是一个需要两个参数的operator，那么count_p--之后，还要+2.伪代码如下：
+while (count_p>0){
+                input = in.next();//读入标准输入
+                deal with input and add the parameters into the buffer
+                ...
+                count_p--;//参数个数计数器--
+                count_p+= number Of parameters the input needs;//参数个数计数器增加 用于处理嵌套的情况
+                ...
+            }
+
+这样之后，还需要再对list类型的输入进行特殊处理，整个list应该被视为一个参数，为此需要进行括号的匹配，将最外面的一对[]之间的输入都当作list的内容。括号的匹配比较简单，也是维护一个括号计数器， 遇到左括号+1，遇到右括号-1，为0的时候，表示list输入完毕。
+2. 关于repeat 操作
+repeat操作有两个参数，第一个是执行的次数n，第二个是需要执行的在list中的语句。我的实现思路比较直接，在Parse类中编写了一个对应的op_repeat方法，当这个方法被调用时，它会使用一个for循环来调用parsing方法解释执行相应代码n次。
+3. 函数的定义和调用操作
+因为函数其实就是一个有着两个子list的list，所以在进行函数的定义，即添加函数到全局的hashmap的时候不将函数与list做区分。
+在调用函数时，才对函数进行解析。
+以一个例子来进行说明：
+```
+make "f [
+	[a ]
+	[
+	make "b 10
+	make "a add :a :b
+	output :a
+	stop
+	print :a
+	]
+]
+```
+
+    上述代码定义了一个函数f，它有一个参数list，以及操作list。定义时，它直接作为一个普通的list存入。当解释器要解释对函数的调用语句，如“ f 12 ”时，它会先判断f是否可能为一个函数名，即f是否为一个list变量，且有两个子list。如果是，那么就进入执行函数的语句，开始解析f。在解析f时，创建了一个存储函数的局部变量及传入参数的hash map。同时，为了完成解析，我参照后面的实验要求，实现了不完全的item操作，（item操作描述：item <number> <list>`：返回列表中的第number项元素。）这样，我可以用item取出参数列表和操作列表。
+    之后我会解析参数列表，通过split方法来得知参数的个数与参数名。再从对最上层解释器对函数的调用语句解析出“12”这个具体的参数值，将参数和参数值加入局部的hash map中,再处理操作列表。接着，将处理过的操作语句和局部的hash map一起传入parser中进行函数的解析。关于函数的返回值我是在局部的hash map中添加了一个特殊的变量: __return_value__，它有一个特殊的初始值。当函数中有output命令时，它会用output的结果来为__return_value__赋值。最后，根据__return_value__的值来决定是否将结果传给上层调用者。
+    这里还有一点要说明，在MUA第一段中，我的parser传入的参数只有处理过的操作语句，这里为了支持函数内部定义的局部变量，我在parser中增加了一个hash map参数来指示解析中遇到的变量属于哪一层。
+
+MuaVariable raw_args = op_item(new MuaVariable("0"),variables.get(choice),variables);//获得参数列表
+MuaVariable raw_func = op_item(new MuaVariable("1"),variables.get(choice),variables);//获得操作列表
+Map<String, MuaVariable> func_variables =new HashMap<>();//存储函数的局部变量的hash map
+List<MuaVariable> args_input_value = new ArrayList<MuaVariable>();//在函数调用时，输入的具体的参数
+for (int i =0 ;i< number of parametres ;i++){
+args_input_value.add(parsing(grammar_info,variables));//从grammar_info中解析出进行函数调用时，输入的参数的具体的值
+func_variables.put(arg_array[i], args_input_value.get(i));//将变量与变量的值插入局部变量的hash map中
+
+            }
+
+
+Info func_stmt = new Info();
+func_stmt.get_info(raw_func);//处理要运行的操作语句，便于后面的解析
+func_variables.put("__return_value__",UNINIT);//初始化返回值
+解释执行函数的操作...
+if (func_variables.get("__return_value__").toString().equals("__UnInit__")){//函数没有返回值
+return FINISHED;
+}else return func_variables.get("__return_value__");//返回相应的值
+
+
+4.表达式计算
+当表达式不含函数或前面定义的操作（“：”除外）：
+    当一个表达式含有+-*/%()时，我的MUA解释器会将其视为一个中缀表达式，而在MUA第一段中，我们实现了add,sub,mul,div,mod等操作，这些操作的格式先有操作符，再有操作数，符合前缀表达式的形式。因此，为了支持含有+-*/%()的表达式，我一个很直接的思路就是将含有+-*/%()的中缀表达式转化为前缀表达式，再调用第一段中实现的add,sub,mul,div,mod等操作完成对表达式的计算。
+比如对于形如:a+((:b+:c)*:d)-:e这样的表达式，我会将其转化为对应的前缀表达式 -+a*+bcde ，再转化为sub add a mul add b c d e,这样我就完全可以使用之前的方法来完成表达式的计算。
+1. 负号与减号：我的解决方法是先识别出负号，负号相比减号，它的特征是在负号的前面要么没有字符，要么是左括号，识别出负号之后，我会在负号前面添加一个0，这样(-3*5)就变为(0-3*5)，负号转变成了减号。
+以下是中缀转前缀的伪代码：
+
+public static String midToPrefix(String raw_cal){
+        Stack<algo_operator> operator_stack = new Stack<>();//操作符栈
+
+        pre-treat raw_cal string//预处理输入 如果是负号 添加0 转化为减号 简化处理
+
+        char[] cal_arr = pre.toString().toCharArray();
+        for (int i =cal_arr.length-1;i>=0;){//从最右边开始遍历
+
+            if (cal_arr[i] is +-*/ or right bracket) {
+
+                algo_operator new_op = new algo_operator(cal_arr[i]);
+                if (operator_stack.isEmpty()) {//栈空
+                    operator_stack.push(new_op);//直接入栈
+                    if (new_op.op==')') operator_stack.peek().setPriority(-1);//右括号入栈后，优先级调整为最低
+                }
+                else if (new_op.priority >= operator_stack.peek().priority) {
+                    operator_stack.push(new_op);//当前操作符优先级>=栈顶运算符，入栈
+                    if (new_op.op==')') operator_stack.peek().setPriority(-1); //右括号入栈后，优先级调整为最低
+                }
+                else {
+                    while (!operator_stack.isEmpty()&&operator_stack.peek().priority > new_op.priority){// 当前操作符优先级<栈顶运算符且栈不空
+                        operator_stack.pop();//pop 
+                        concat the operator to the result string
+                    }
+                    operator_stack.push(new_op);//push 当前操作符
+                }
+                i--;
+                continue;
+            }else if (cal_arr[i]=='('){//遇到左括号
+                while (operator_stack.peek().op!=')'){
+                    operator_stack.pop();//将栈里的右括号上面的操作符全部pop
+                    concat the operator to the result string
+                }
+                operator_stack.pop();//pop 最后的右括号
+                i--;
+                continue;
+            }else{
+                concat the operand to the result string
+                i change;
+                continue;
+            }
+        }
+        while (!operator_stack.isEmpty()){//如果栈不空
+           operator_stack.pop();//pop
+        }
+        reverse result string //逆序
+        return res;
+
+    }
+
+
+当表达式包含函数或前面定义的操作（“：”除外）：
+根据老师最新的要求，在表达式两端都会有个括号。同时结合前面的内容，我已经可以处理不包含op与函数的表达式。因此，我采用了递归的解决方案，先处理输入为能正确解析的格式，再将字表达式中每个函数与op解析出来，得到数值的结果后，替换函数与op,再调用前面的方法来计算出结果。这里有一个小trick，因为所有的表达式与函数都是前缀，所以在处理表达式中的函数的时候，我是从右向左进行解析，因为对于合法的表达式来说，最右边的函数所有的参数必定是给出的具体数字。这样从右向左必然可以完成对所有函数的替换。
+
+### 4.2 数据结构
+4.2.1 MuaVariable类
+我编写了MuaVariable类来存储Mua解释器生成的变量。该类包含了三个内部变量：
+	String v_name;//存储变量名；对于Word变量，是将开头的引号也一并存储的
+    String raw_value;//存储该Mua变量存储的原始字符串
+    int type;//存储Mua变量类型 Word：0  number：1 bool：2 list：3  op(命令):4 
+4.2.2 Map<String, MuaVariable> variables
+Java Map接口中键和值一一映射. 可以通过键来获取值。
+即给定一个键和一个值，可以将该值存储在一个Map对象. 之后，可以通过键来访问对应的值。
+我使用Java自带的HashMap类型来存储所有的MuaVariable，可以方便地查询在解释过程中定义的变量。 
+
+### 4.3 各个类的说明
+
+4.3.1 MuaVariable类
+(a) 类的功能：
+Mua变量类，用来表示Mua的变量
+(b) 新的方法的注释
+添加了新的变量类型：final int EXPRESSION = 5; 
+public int numOfPara(String in) 返回字符串in需要的参数的个数
+
+4.3.3 Parse类 
+(a) 类（接口）的功能
+进行语法分析与解释执行
+(b) 新的方法的注释
+static String reformatExpression(String exp,Map<String, MuaVariable> variables)：重新调整输入的表达式字符串exp。主要是在运算符左右添加空格，便于解析。
+MuaVariable op_expression(MuaVariable temp,Map<String, MuaVariable> variables)：处理表达式的方法。
+
+4.3.4 MuaInterpreter 类 
+main函数入口 ；
+设置一个Map类型的静态变量来存储MuaInterpreter使用make命令创建的所有Mua变量
+
+4.3.5 MuaError 类 
+(a) 类（接口）的功能
+处理parse过程中的错误，一旦错误会打印错误信息，并直接退出整个程序。
+
